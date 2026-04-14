@@ -1,0 +1,236 @@
+# imports required modules
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+import matplotlib.pyplot as plt
+
+
+# Loads and displays the data
+housing = pd.read_csv("./../data/housing/housing.csv")
+display(housing)
+
+
+# Shows basic information about the data
+print(housing.info())
+
+
+
+# Looks at the statistics for 'ocean_proximity'
+housing.ocean_proximity.value_counts()
+
+
+Out[4]:	
+ocean_proximity
+<1H OCEAN     9136
+INLAND        6551
+NEAR OCEAN    2658
+NEAR BAY      2290
+ISLAND           5
+Name: count, dtype: int64
+In [5]:	
+# Looks at the basic statistics of the data
+housing.describe()
+
+
+In [6]:	
+# Plots the histogram of each numerical attribute to look at the data distributions.
+
+housing.hist(bins=50, figsize=(15,8))
+plt.show()
+
+Histograms are observed to be tail-heavy (right-skewed). If these are caused by outliers, they should be removed before feeding data into machine learning algorithm.
+
+Cleaning Data
+Removing duplicate observations
+
+In [7]:	
+# Checks for duplicate observations
+duplicate_count = sum(housing.duplicated())
+print("Duplicate observations found in the dataset: {}".format(duplicate_count))
+
+# Deletes the duplicate data, if found
+if duplicate_count > 0:
+    housing.drop_duplicates(inplace=True)
+    print("\n\tDuplicate observations were deleted.")
+    print("\n\tData shape after duplicate removal:", housing.shape)
+
+
+In [8]:	
+# Gets number of unique values for each column
+unique_values_per_attrib = housing.nunique()
+
+# Records columns to delete
+single_value_columns = [i for i, value_count in enumerate(unique_values_per_attrib) if value_count == 1]
+print("Number of single_valued columns found in the datsset: {}".format(len(single_value_columns)))
+
+# Deletes single-value columns, if exist
+if len(single_value_columns) > 0:
+    housing.drop(single_value_columns, axis=1, inplace=True)
+    print("\n\tAll single-valued columns were removed.")
+    print("\n\tData shape after removal of single-value column(s):", housing.shape)
+
+
+In [9]:	
+# Option 1
+# train_set, test_set = train_test_split(housing, test_size=0.2, random_state=42)
+# Option 2
+housing["median_income_cat"] = pd.cut(
+    housing["median_income"],
+    bins=[0., 1.5, 3.0, 4.5, 6., np.inf],
+    labels=[1, 2, 3, 4, 5])
+
+
+
+In [10]:	
+# Views distribution of median income categories
+housing["median_income_cat"].hist()
+plt.show()
+
+
+In [11]:	
+# Splits data into train and test dataset applying stratification
+train_set, test_set = train_test_split(
+    housing, test_size=0.2, stratify=housing["median_income_cat"], random_state=42)
+
+
+In [12]:	
+# Removes temporary attribute 'median_income_cat' from both the datasets as 
+# this attribute will no longer be used later.
+train_set.drop("median_income_cat", axis=1, inplace=True)
+test_set.drop("median_income_cat", axis=1, inplace=True)
+
+
+In [13]:	
+# First, seperates target from features
+housing_train = train_set.drop("median_house_value", axis=1)
+housing_train_labels = train_set["median_house_value"].copy()
+
+
+In [14]:	
+# Initializes imputer
+imputer = SimpleImputer(strategy="median")
+# Considers only numeric columns as the imputer works on numeric data
+housing_train_num = housing_train.drop("ocean_proximity", axis=1)
+# Fits the imputer
+imputer.fit(housing_train_num)
+# Transforms the missing values in each column with learned median
+housing_train_num_imputed = imputer.transform(housing_train_num)
+
+
+In [15]:	
+# Initializes the scaler
+std_scaler = StandardScaler()
+# Fits the scaler and then transforms the attribute values
+housing_train_num_scaled = std_scaler.fit_transform(housing_train_num_imputed)
+
+
+In [16]:	
+# Prints the shape of the transformed dataset with only numerical attributes
+housing_train_num_scaled.shape
+
+
+In [17]:	
+# Initializes encoder
+cat_encoder = OneHotEncoder(sparse_output=False)
+# Sets a variable to attribute column
+housing_train_cat = housing_train[["ocean_proximity"]]
+# Fits the encoder
+cat_encoder.fit(housing_train_cat)
+# Transforms the categorical data by transforming it
+housing_train_cat_1hot = cat_encoder.transform(housing_train_cat)
+
+
+In [18]:	
+# Shows one-hot encoded information in densed array form [just for reference]
+housing_train_cat_1hot
+
+
+In [19]:	
+# Shows the ordered list of categories related to one-hot encoding
+cat_encoder.categories_
+
+
+In [20]:	
+# Stacks numerically scaled data and categorically encoded data horizontally (column wise).
+housing_train_transformed = np.hstack((housing_train_num_scaled, housing_train_cat_1hot))
+# The above stackign can also be done over the following statement
+# housing_train_transformed = np.append(housing_train_num_scaled, housing_train_cat_1hot, axis=1)
+# Checks the shape of transformed train set
+housing_train_transformed.shape
+
+
+In [21]:	
+# Just for reference, the train set is shown through DataFrame 
+pd.DataFrame(
+    housing_train_transformed, 
+    columns=list(housing_train_num.columns) + cat_encoder.categories_[0].tolist())
+
+
+In [55]:	
+# Saves the transformed train set to be used for machine learning training later
+# NOTE: Target also gets saved in the last column
+with open("./housing_train_transformed.npy", "wb") as f:
+    np.save(
+        f, 
+        np.concatenate((housing_train_transformed, np.expand_dims(housing_train_labels, axis=1)), axis=1), 
+        allow_pickle=False)
+
+
+In [56]:	
+# Seperates target from features
+housing_test = test_set.drop("median_house_value", axis=1)
+housing_test_labels = test_set["median_house_value"].copy()
+
+
+In [57]:	
+# Considers only numeric columns as the imputer works on numeric data
+housing_test_num = housing_test.drop("ocean_proximity", axis=1)
+# Uses already fitted imputer to transforms the missing values in each column
+housing_test_num_imputed = imputer.transform(housing_test_num)
+
+
+In [58]:	
+# Uses already fitted scaler to transform (or scale) numeric attributes
+housing_test_num_scaled = std_scaler.transform(housing_test_num_imputed)
+In [59]:	
+# Prints the shape of the transformed test set with only numerical attributes
+housing_test_num_scaled.shape
+
+
+In [60]:	
+# Sets a variable to attribute column
+housing_test_cat = housing_test[["ocean_proximity"]]
+# Uses already fitted categorical encoder to transform the categorical attributes into one-hot-encoded columns
+housing_test_cat_1hot = cat_encoder.transform(housing_test_cat)
+
+
+In [61]:	
+# Stacks numerically scaled data and categorically encoded data horizontally (column wise).
+housing_test_transformed = np.hstack((housing_test_num_scaled, housing_test_cat_1hot))
+# The above stacking can also be done over the following statement
+# housing_test_transformed = np.append(housing_test_num_scaled, housing_test_cat_1hot, axis=1)
+# Checks the shape of transformed train set
+housing_test_transformed.shape
+
+
+In [62]:	
+# Just for reference, the test set is shown through DataFrame 
+display(
+    pd.DataFrame(
+        housing_test_transformed, 
+        index=housing_test_num.index,
+        columns=list(housing_test_num.columns)+list(cat_encoder.categories_[0])
+    )
+)
+
+
+In [63]:	
+# Saves the transformed test set to be used for machine learning training later
+# NOTE: Target also gets saved in the last column
+with open("./housing_test_transformed.npy", "wb") as f:
+    np.save(
+        f, 
+        np.concatenate((housing_test_transformed, np.expand_dims(housing_test_labels, axis=1)), axis=1), 
+        allow_pickle=False)
